@@ -132,17 +132,17 @@ struct LieGroupCeresTests {
                     T* sResiduals) const {
       using LieGroupT = LieGroup<T>;
       using PointT = typename LieGroupT::Point;
-      Eigen::Map<LieGroupT const> const T_wa(sT_wa);
-      Eigen::Map<PointT const> point_b(spoint_b);
+      Eigen::Map<LieGroupT const> const T_wa(sT_wa);  // x
+      Eigen::Map<PointT const> point_b(spoint_b);     // pb
       Eigen::Map<PointT> residuals(sResiduals);
 
       // Multiply LieGroupd by Jet Vector3.
-      PointT point_b_prime = T_aw * point_b;
+      PointT point_b_prime = T_aw.inverse() * point_b;        // yt * pb
       // Ensure Jet LieGroup multiplication with Jet Vector3.
-      point_b_prime = T_aw.template cast<T>() * point_b;
+      point_b_prime = T_aw.inverse().template cast<T>() * point_b;
 
       // Multiply Jet LieGroup with Vector3d.
-      PointT point_a_prime = T_wa * point_a;
+      PointT point_a_prime = T_wa * point_a;      // x * pa
       // Ensure Jet LieGroup multiplication with Jet Vector3.
       point_a_prime = T_wa * point_a.template cast<T>();
 
@@ -185,6 +185,8 @@ struct LieGroupCeresTests {
             passed &=
                 test(group_vec[i], group_vec[j], point_vec[k], point_vec[l]);
             processTestResult(passed);
+            // std::cout << "exit 0 \n";
+            // exit(0);
           }
         }
       }
@@ -278,6 +280,10 @@ struct LieGroupCeresTests {
            final_error < .25 * initial_error;
   }
 
+  // 直接的点观测
+  // T_wa 有一个初值T_w_init 和直接的李群观测T_w_targ, 优化后初值与观测应该完全一致
+  // ! 点 在李群下有一个点的初值 point_a_init 和观测 point_b, 优化后 点的位置与观测完全一致 point_b
+  // ! 如此点观测有些鸡肋，可以不使用
   bool test(LieGroupd const& T_w_targ, LieGroupd const& T_w_init,
             Pointd const& point_a_init, Pointd const& point_b) {
     static constexpr int kNumPointParameters = Pointd::RowsAtCompileTime;
@@ -285,6 +291,10 @@ struct LieGroupCeresTests {
     // Optimization parameters.
     LieGroupd T_wr = T_w_init;
     Pointd point_a = point_a_init;
+
+    // comment
+    // std::cout << "\nT_w_init and point_a_init is \n" << T_w_init.matrix() <<"\n" << point_a_init.transpose() <<"\n";
+    // std::cout << "T_w_targ and point_b is \n" << T_w_targ.matrix() <<"\n" << point_b.transpose() <<"\n";
 
     // Build the problem.
     ceres::Problem problem;
@@ -321,9 +331,16 @@ struct LieGroupCeresTests {
     Solve(options, &problem, &summary);
 
     // Difference between target and parameter
-    double const mse = squaredNorm((T_w_targ.inverse() * T_wr).log());
-    bool const passed = mse < 10. * Sophus::Constants<double>::epsilon();
-    return passed;
+    double const mse1 = squaredNorm((T_w_targ.inverse() * T_wr).log());
+    double const mse2 = squaredNorm((point_a - point_b).norm());
+    bool const passed1 = mse1 < 10. * Sophus::Constants<double>::epsilon();
+    bool const passed2 = mse2 < 10. * Sophus::Constants<double>::epsilon();
+
+    // std::cout << "after optimize T_wr and point_a is \n" << T_wr.matrix() <<"\n" << point_a.transpose() <<"\n";
+    // std::cout << "point_a in world is " << (T_wr * point_a).transpose() <<" \n";
+
+
+    return passed1 && passed2;
   }
 
   bool testManifold(const LieGroupd& x, const LieGroupd& y) {
