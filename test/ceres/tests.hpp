@@ -137,12 +137,12 @@ struct LieGroupCeresTests {
       Eigen::Map<PointT> residuals(sResiduals);
 
       // Multiply LieGroupd by Jet Vector3.
-      PointT point_b_prime = T_aw.inverse() * point_b;        // yt * pb
+      PointT point_b_prime = T_aw.inverse() * point_b;  // yt * pb
       // Ensure Jet LieGroup multiplication with Jet Vector3.
       point_b_prime = T_aw.inverse().template cast<T>() * point_b;
 
       // Multiply Jet LieGroup with Vector3d.
-      PointT point_a_prime = T_wa * point_a;      // x * pa
+      PointT point_a_prime = T_wa * point_a;  // x * pa
       // Ensure Jet LieGroup multiplication with Jet Vector3.
       point_a_prime = T_wa * point_a.template cast<T>();
 
@@ -154,6 +154,9 @@ struct LieGroupCeresTests {
     Pointd point_a;
   };
 
+  // 李群的边观测
+  // 待优化量 T_wa T_wb
+  // ! 观测值为 Tab
   struct TestGraphFunctor {
     template <typename T>
     bool operator()(const T* a, const T* b, T* residuals) const {
@@ -169,7 +172,7 @@ struct LieGroupCeresTests {
     }
 
     TestGraphFunctor(const LieGroupd& diff) : diff(diff) {}
-    const LieGroupd diff;
+    const LieGroupd diff; // T_ab
   };
 
   bool testAll() {
@@ -234,6 +237,7 @@ struct LieGroupCeresTests {
       const LieGroupd delta = LieGroupd::exp(delta_log);
       V_estimate.emplace_back(v * delta);
       initial_error += squaredNorm(delta_log);
+      // ! 构造num_vertices个初值
       problem.AddParameterBlock(V_estimate.back().data(),
                                 LieGroupd::num_parameters, parametrization);
     }
@@ -244,16 +248,17 @@ struct LieGroupCeresTests {
     // expectation of squared norm for all groups
     for (size_t i = 0; i < num_vertices; ++i)
       for (size_t j = i + 1; j < num_vertices; ++j) {
-        LieGroupd diff = V[i].inverse() * V[j];
+        //! let i  is T_wa , j is T_wb  
+        LieGroupd diff = V[i].inverse() * V[j]; // diff is T_ab
         const auto delta_log =
             Random<typename LieGroupd::Tangent>::sample(rng) *
             sigma_observation_elementwise;
-        const auto delta = LieGroupd::exp(delta_log);
+        const auto delta = LieGroupd::exp(delta_log); // 小扰动
         ceres::CostFunction* cost =
             new ceres::AutoDiffCostFunction<TestGraphFunctor, LieGroupd::DoF,
                                             LieGroupd::num_parameters,
                                             LieGroupd::num_parameters>(
-                new TestGraphFunctor(diff * delta));
+                new TestGraphFunctor(diff * delta));  
         // For real-world problems you should consider using robust
         // loss-function
         problem.AddResidualBlock(cost, nullptr, V_estimate[i].data(),
@@ -281,9 +286,10 @@ struct LieGroupCeresTests {
   }
 
   // 直接的点观测
-  // T_wa 有一个初值T_w_init 和直接的李群观测T_w_targ, 优化后初值与观测应该完全一致
-  // ! 点 在李群下有一个点的初值 point_a_init 和观测 point_b, 优化后 点的位置与观测完全一致 point_b
-  // ! 如此点观测有些鸡肋，可以不使用
+  // T_wa 有一个初值T_w_init 和直接的李群观测T_w_targ,
+  // 优化后初值与观测应该完全一致 ! 点 在李群下有一个点的初值 point_a_init
+  // 和观测 point_b, 优化后 点的位置与观测完全一致 point_b !
+  // 如此点观测有些鸡肋，可以不使用
   bool test(LieGroupd const& T_w_targ, LieGroupd const& T_w_init,
             Pointd const& point_a_init, Pointd const& point_b) {
     static constexpr int kNumPointParameters = Pointd::RowsAtCompileTime;
@@ -293,8 +299,9 @@ struct LieGroupCeresTests {
     Pointd point_a = point_a_init;
 
     // comment
-    // std::cout << "\nT_w_init and point_a_init is \n" << T_w_init.matrix() <<"\n" << point_a_init.transpose() <<"\n";
-    // std::cout << "T_w_targ and point_b is \n" << T_w_targ.matrix() <<"\n" << point_b.transpose() <<"\n";
+    // std::cout << "\nT_w_init and point_a_init is \n" << T_w_init.matrix()
+    // <<"\n" << point_a_init.transpose() <<"\n"; std::cout << "T_w_targ and
+    // point_b is \n" << T_w_targ.matrix() <<"\n" << point_b.transpose() <<"\n";
 
     // Build the problem.
     ceres::Problem problem;
@@ -336,9 +343,9 @@ struct LieGroupCeresTests {
     bool const passed1 = mse1 < 10. * Sophus::Constants<double>::epsilon();
     bool const passed2 = mse2 < 10. * Sophus::Constants<double>::epsilon();
 
-    // std::cout << "after optimize T_wr and point_a is \n" << T_wr.matrix() <<"\n" << point_a.transpose() <<"\n";
-    // std::cout << "point_a in world is " << (T_wr * point_a).transpose() <<" \n";
-
+    // std::cout << "after optimize T_wr and point_a is \n" << T_wr.matrix()
+    // <<"\n" << point_a.transpose() <<"\n"; std::cout << "point_a in world is "
+    // << (T_wr * point_a).transpose() <<" \n";
 
     return passed1 && passed2;
   }
